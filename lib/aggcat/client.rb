@@ -22,9 +22,10 @@ module Aggcat
       get("/institutions/#{institution_id}")
     end
 
-    def discover_and_add_accounts(institution_id, username, password)
-      validate(institution_id: institution_id, username: username, password: password)
-      body = credentials(institution_id, username, password)
+    # credentials should be an array of 2-element arrays representing the ordered credentials
+    def discover_and_add_accounts(institution_id, credentials)
+      validate(institution_id: institution_id, credentials: credentials)
+      body = build_credentials(credentials)
       post("/institutions/#{institution_id}/logins", body)
     end
 
@@ -52,9 +53,10 @@ module Aggcat
       get(path)
     end
 
-    def update_login(institution_id, login_id, username, password)
-      validate(institution_id: institution_id, login_id: login_id, username: username, password: password)
-      body = credentials(institution_id, username, password)
+    # credentials should be an array of 2-element arrays representing the ordered credentials
+    def update_login(institution_id, login_id, credentials)
+      validate(institution_id: institution_id, login_id: login_id, credentials: credentials)
+      body = build_credentials(credentials)
       put("/logins/#{login_id}?refresh=true", body)
     end
 
@@ -123,22 +125,16 @@ module Aggcat
       end
     end
 
-    def credentials(institution_id, username, password)
-      institution = institution(institution_id)
-      raise ArgumentError.new("institution_id #{institution_id} is invalid") if institution.nil? || institution[:result][:institution_detail].nil?
-      keys = institution[:result][:institution_detail][:keys][:key].sort { |a, b| a[:display_order].to_i <=> b[:display_order].to_i }
-      hash = {
-          keys[0][:name] => username,
-          keys[1][:name] => password
-      }
-
+    # values should be an array of 2-element arrays representing the ordered credentials
+    # ex. build_credentials([["Username", "joe"], ["Password", "secret"]]
+    def build_credentials(values=[])
       xml = Builder::XmlMarkup.new
       xml.InstitutionLogin('xmlns' => LOGIN_NAMESPACE) do |login|
         login.credentials('xmlns:ns1' => LOGIN_NAMESPACE) do
-          hash.each do |key, value|
+          values.each do |credential|
             xml.tag!('ns1:credential', {'xmlns:ns2' => LOGIN_NAMESPACE}) do
-              xml.tag!('ns2:name', key)
-              xml.tag!('ns2:value', value)
+              xml.tag!('ns2:name', credential.first)
+              xml.tag!('ns2:value', credential.last)
             end
           end
         end

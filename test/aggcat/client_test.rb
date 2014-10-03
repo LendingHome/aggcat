@@ -45,27 +45,57 @@ class ClientTest < Test::Unit::TestCase
 
   def test_discover_and_add_accounts
     institution_id = '100000'
+    stub_get("/institutions/#{institution_id}").to_return(:body => fixture('institution.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
     stub_post("/institutions/#{institution_id}/logins").to_return(:body => fixture('account.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
-    response = @client.discover_and_add_accounts(institution_id, [['Banking Userid', 'username'], ['Banking Password', 'password']]) # names pulled from institution.xml
+    response = @client.discover_and_add_accounts(institution_id, 'username', 'password')
+    assert_equal institution_id, response[:result][:account_list][:banking_account][:institution_id]
+    assert_equal '000000000001', response[:result][:account_list][:banking_account][:account_id]
+  end
+
+  def test_discover_and_add_accounts_inactive_fields
+    institution_id = '100000'
+    stub_get("/institutions/#{institution_id}").to_return(:body => fixture('institution_hidden_fields.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    stub_post("/institutions/#{institution_id}/logins").to_return(:body => fixture('account.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    response = @client.discover_and_add_accounts(institution_id, 'username', 'password')
     assert_equal institution_id, response[:result][:account_list][:banking_account][:institution_id]
     assert_equal '000000000001', response[:result][:account_list][:banking_account][:account_id]
   end
 
   def test_discover_and_add_accounts_with_challenge
     institution_id = '100000'
+    stub_get("/institutions/#{institution_id}").to_return(:body => fixture('institution.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
     stub_post("/institutions/#{institution_id}/logins").to_return(:code => 401, :body => fixture('account.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
-    response = @client.discover_and_add_accounts(institution_id, [['Banking Userid', 'username'], ['Banking Password', 'password']]) # names pulled from institution.xml
+    response = @client.discover_and_add_accounts(institution_id, 'username', 'password')
     assert_equal institution_id, response[:result][:account_list][:banking_account][:institution_id]
     assert_equal '000000000001', response[:result][:account_list][:banking_account][:account_id]
   end
 
+  def test_discover_and_add_accounts_multiple_credential_args
+    institution_id = '100000'
+    stub_get("/institutions/#{institution_id}").to_return(:body => fixture('institution_three_credentials.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    stub_post("/institutions/#{institution_id}/logins").to_return(:body => fixture('account.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    response = @client.discover_and_add_accounts(institution_id, 'username', 'password', 'account pin')
+    assert_equal institution_id, response[:result][:account_list][:banking_account][:institution_id]
+    assert_equal '000000000001', response[:result][:account_list][:banking_account][:account_id]
+  end
+
+  def test_discover_and_add_accounts_not_enough_credentials
+    institution_id = '100000'
+    stub_get("/institutions/#{institution_id}").to_return(:body => fixture('institution_three_credentials.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    exception = assert_raise(ArgumentError) { @client.discover_and_add_accounts(institution_id, 'username', 'password') }
+    assert_equal('institution_id 100000 requires 3 credential fields but was given 2 to authenticate with.', exception.message)
+  end
+
   def test_discover_and_add_accounts_bad_args
     [nil, ''].each do |arg|
-      exception = assert_raise(ArgumentError) { @client.discover_and_add_accounts(arg, 'credentials') }
+      exception = assert_raise(ArgumentError) { @client.discover_and_add_accounts(arg, 'username', 'password') }
       assert_equal('institution_id is required', exception.message)
 
-      exception = assert_raise(ArgumentError) { @client.discover_and_add_accounts(1, arg) }
-      assert_equal('credentials is required', exception.message)
+      exception = assert_raise(ArgumentError) { @client.discover_and_add_accounts(1, arg, 'password') }
+      assert_equal('username is required', exception.message)
+
+      exception = assert_raise(ArgumentError) { @client.discover_and_add_accounts(1, 'username', arg) }
+      assert_equal('password is required', exception.message)
     end
   end
 
@@ -123,6 +153,24 @@ class ClientTest < Test::Unit::TestCase
     end
   end
 
+  def test_update_account_type
+    account_id = '000000000001'
+    type = 'ANOTHER'
+    stub_put("/accounts/#{account_id}").to_return(:status => 200)
+    response = @client.update_account_type(account_id, type)
+    assert_equal '200', response[:status_code]
+  end
+
+  def test_update_account_type_bad_args
+    [nil, ''].each do |arg|
+      exception = assert_raise(ArgumentError) { @client.update_account_type(arg, 'CREDITCARD') }
+      assert_equal('account_id is required', exception.message)
+
+      exception = assert_raise(ArgumentError) { @client.update_account_type(1, arg) }
+      assert_equal('type is required', exception.message)
+    end
+  end
+
   def test_delete_account
     account_id = '000000000001'
     stub_delete("/accounts/#{account_id}").to_return(:status => 200)
@@ -145,24 +193,59 @@ class ClientTest < Test::Unit::TestCase
     assert_nil @client.instance_variable_get('@oauth_token')
   end
 
+  def test_login_accounts
+    login_id = '147630161'
+    stub_get("/logins/#{login_id}/accounts").to_return(:body => fixture('accounts.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    response = @client.login_accounts(login_id)
+    assert_equal '200', response[:status_code]
+  end
+
+  def test_login_accounts_bad_args
+    [nil, ''].each do |arg|
+      exception = assert_raise(ArgumentError) { @client.login_accounts(arg) }
+      assert_equal('login_id is required', exception.message)
+    end
+  end
+
   def test_update_login
     institution_id = '100000'
     login_id = '12345'
+    stub_get("/institutions/#{institution_id}").to_return(:body => fixture('institution.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
     stub_put("/logins/#{login_id}?refresh=true").to_return(:status => 200)
-    response = @client.update_login(institution_id, login_id, [['Banking Userid', 'username'], ['Banking Password', 'password']])
+    response = @client.update_login(institution_id, login_id, 'usename', 'password')
     assert_equal '200', response[:status_code]
+  end
+
+  def test_update_login_multiple_credential_args
+    institution_id = '100000'
+    login_id = '12345'
+    stub_get("/institutions/#{institution_id}").to_return(:body => fixture('institution_three_credentials.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    stub_put("/logins/#{login_id}?refresh=true").to_return(:status => 200)
+    response = @client.update_login(institution_id, login_id, 'usename', 'password', 'account pin')
+    assert_equal '200', response[:status_code]
+  end
+
+  def test_update_login_not_enough_credentials
+    institution_id = '100000'
+    login_id = '12345'
+    stub_get("/institutions/#{institution_id}").to_return(:body => fixture('institution_three_credentials.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    exception = assert_raise(ArgumentError) { @client.update_login(institution_id, login_id, 'username', 'password') }
+    assert_equal('institution_id 100000 requires 3 credential fields but was given 2 to authenticate with.', exception.message)
   end
 
   def test_update_login_bad_args
     [nil, ''].each do |arg|
-      exception = assert_raise(ArgumentError) { @client.update_login(arg, 1, 'credentials') }
+      exception = assert_raise(ArgumentError) { @client.update_login(arg, 1, 'username', 'password') }
       assert_equal('institution_id is required', exception.message)
 
-      exception = assert_raise(ArgumentError) { @client.update_login(1, arg, 'credentials') }
+      exception = assert_raise(ArgumentError) { @client.update_login(1, arg, 'username', 'password') }
       assert_equal('login_id is required', exception.message)
 
-      exception = assert_raise(ArgumentError) { @client.update_login(1, 1, arg) }
-      assert_equal('credentials is required', exception.message)
+      exception = assert_raise(ArgumentError) { @client.update_login(1, 1, arg, 'password') }
+      assert_equal('username is required', exception.message)
+
+      exception = assert_raise(ArgumentError) { @client.update_login(1, 1, 'username', arg) }
+      assert_equal('password is required', exception.message)
     end
   end
 
@@ -229,6 +312,14 @@ class ClientTest < Test::Unit::TestCase
     institution_id = '100000'
     stub_get("/institutions/#{institution_id}").to_timeout.times(2)
     assert_raise(Timeout::Error) { @client.institution(institution_id) }
+  end
+
+  def test_investment_postitions
+    account_id = '000000000001'
+    stub_get("/accounts/#{account_id}/positions").to_return(:body => fixture('positions.xml'), :headers => {:content_type => 'application/xml; charset=utf-8'})
+    response = @client.investment_positions(account_id)
+    assert_equal response[:result][:investment_positions][:position][0][:investment_position_id].to_i , 000000000001
+    assert_equal response[:result][:investment_positions][:position][1][:investment_position_id].to_i , 000000000002
   end
 
 end

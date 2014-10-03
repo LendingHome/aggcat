@@ -22,10 +22,9 @@ module Aggcat
       get("/institutions/#{institution_id}")
     end
 
-    # credentials should be an array of 2-element arrays representing the ordered credentials
-    def discover_and_add_accounts(institution_id, credentials)
-      validate(institution_id: institution_id, credentials: credentials)
-      body = build_credentials(credentials)
+    def discover_and_add_accounts(institution_id, *login_credentials)
+      validate(institution_id: institution_id, username: login_credentials[0], password: login_credentials[1])
+      body = credentials(institution_id, login_credentials)
       post("/institutions/#{institution_id}/logins", body)
     end
 
@@ -53,10 +52,14 @@ module Aggcat
       get(path)
     end
 
-    # credentials should be an array of 2-element arrays representing the ordered credentials
-    def update_login(institution_id, login_id, credentials)
-      validate(institution_id: institution_id, login_id: login_id, credentials: credentials)
-      body = build_credentials(credentials)
+    def login_accounts(login_id)
+      validate(login_id: login_id)
+      get("/logins/#{login_id}/accounts")
+    end
+
+    def update_login(institution_id, login_id, *login_credentials)
+      validate(institution_id: institution_id, login_id: login_id, username: login_credentials[0], password: login_credentials[1])
+      body = credentials(institution_id, login_credentials)
       put("/logins/#{login_id}?refresh=true", body)
     end
 
@@ -64,6 +67,11 @@ module Aggcat
       validate(login_id: login_id, challenge_node_id: challenge_session_id, challenge_node_id: challenge_node_id, answers: answers)
       headers = {'challengeSessionId' => challenge_session_id, 'challengeNodeId' => challenge_node_id}
       put("/logins/#{login_id}?refresh=true", challenge_answers(answers), headers)
+    end
+
+    def update_account_type(account_id, type)
+      validate(account_id: account_id, type: type)
+      put("/accounts/#{account_id}", account_type(type))
     end
 
     def delete_account(account_id)
@@ -77,6 +85,11 @@ module Aggcat
         @oauth_token = nil
       end
       result
+    end
+
+    def investment_positions(account_id)
+      validate(account_id: account_id)
+      get("/accounts/#{account_id}/positions")
     end
 
     protected
@@ -125,16 +138,23 @@ module Aggcat
       end
     end
 
-    # values should be an array of 2-element arrays representing the ordered credentials
-    # ex. build_credentials([["Username", "joe"], ["Password", "secret"]]
-    def build_credentials(values=[])
+    def credentials(institution_id, login_credentials)
+      institution = institution(institution_id)
+      raise ArgumentError.new("institution_id #{institution_id} is invalid") if institution.nil? || institution[:result][:institution_detail].nil?
+      login_keys = institution[:result][:institution_detail][:keys][:key].select { |key| key[:display_flag] == 'true' }.sort { |a, b| a[:display_order].to_i <=> b[:display_order].to_i }
+      if login_keys.length != login_credentials.length
+        raise ArgumentError.new("institution_id #{institution_id} requires #{login_keys.length} credential fields but was given #{login_credentials.length} to authenticate with.")
+      end
+
+      hash = login_keys.each_with_index.inject({}) { |h, (key, index)| h[key[:name]] = login_credentials[index].to_s; h }
+
       xml = Builder::XmlMarkup.new
       xml.InstitutionLogin('xmlns' => LOGIN_NAMESPACE) do |login|
         login.credentials('xmlns:ns1' => LOGIN_NAMESPACE) do
-          values.each do |credential|
+          hash.each do |key, value|
             xml.tag!('ns1:credential', {'xmlns:ns2' => LOGIN_NAMESPACE}) do
-              xml.tag!('ns2:name', credential.first)
-              xml.tag!('ns2:value', credential.last)
+              xml.tag!('ns2:name', key)
+              xml.tag!('ns2:value', value)
             end
           end
         end
@@ -152,6 +172,30 @@ module Aggcat
       end
     end
 
+    def account_type(type)
+      xml = Builder::XmlMarkup.new
+      if BANKING_TYPES.include?(type)
+        xml.tag!('ns4:BankingAccount', {'xmlns:ns4' => BANKING_ACCOUNT_NAMESPACE}) do
+          xml.tag!('ns4:bankingAccountType', type)
+        end
+      elsif CREDIT_TYPES.include?(type)
+        xml.tag!('ns4:CreditAccount', {'xmlns:ns4' => CREDIT_ACCOUNT_NAMESPACE}) do
+          xml.tag!('ns4:creditAccountType', type)
+        end
+      elsif LOAN_TYPES.include?(type)
+        xml.tag!('ns4:Loan', {'xmlns:ns4' => LOAN_NAMESPACE}) do
+          xml.tag!('ns4:loanType', type)
+        end
+      elsif INVESTMENT_TYPES.include?(type)
+        xml.tag!('ns4:InvestmentAccount', {'xmlns:ns4' => INVESTMENT_ACCOUNT_NAMESPACE}) do
+          xml.tag!('ns4:investmentAccountType', type)
+        end
+      else
+        xml.tag!('ns4:RewardAccount', {'xmlns:ns4' => REWARD_ACCOUNT_NAMESPACE}) do
+          xml.tag!('ns4:rewardAccountType')
+        end
+      end
+    end
   end
 end
 

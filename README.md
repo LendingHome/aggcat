@@ -36,6 +36,10 @@ Aggcat.configure do |config|
   config.consumer_key = 'your consumer key'
   config.consumer_secret = 'your consumer secret'
   config.certificate_path = '/path/to/your/certificate/key'
+  # certificate could be provided as a string instead of a path to a file using certificate_value
+  # certificate_value takes precedence over certificate_path
+  # certificate_value should contain newline characters as appropriate
+  # config.certificate_value = "-----BEGIN RSA PRIVATE KEY-----\nasdf123FOO$BAR\n...\n-----END RSA PRIVATE KEY-----"
 end
 
 # alternatively, specify configuration options when instantiating an Aggcat::Client
@@ -43,7 +47,7 @@ client = Aggcat::Client.new(
   issuer_id: 'your issuer id',
   consumer_key: 'your consumer key',
   consumer_secret: 'your consumer secret',
-  certificate_path: '/path/to/your/certificate/key',
+  certificate_path: '/path/to/your/certificate/key', # OR certificate_value: "--BEGIN RSA KEY--..."
   customer_id: 'scope for all requests'
 )
 
@@ -77,11 +81,17 @@ start_date = Date.today - 30
 end_date = Date.today # optional
 client.account_transactions(account_id, start_date, end_date)
 
+# update account type
+client.update_account_type(account_id, 'CREDITCARD')
+
 # update login credentials
 client.update_login(institution_id, login_id, new_username, new_password)
 
 # in case MFA is required
-client.update_login_confirmation(institution_id, challenge_session_id, challenge_node_id, answers)
+client.update_login_confirmation(login_id, challenge_session_id, challenge_node_id, answers)
+
+# get position info for an investment account
+client.investment_positions(account_id)
 
 # you can set scope inline for any request
 Aggcat.scope(customer_id).account(account_id)

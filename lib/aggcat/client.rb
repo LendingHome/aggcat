@@ -57,6 +57,12 @@ module Aggcat
       get("/logins/#{login_id}/accounts")
     end
 
+    def empty_login(login_id)
+      validate(login_id: login_id)
+      body = Builder::XmlMarkup.new.InstitutionLogin('xmlns' => LOGIN_NAMESPACE)
+      put("/logins/#{login_id}?refresh=true", body)
+    end
+
     def update_login(institution_id, login_id, *login_credentials)
       validate(institution_id: institution_id, login_id: login_id, username: login_credentials[0], password: login_credentials[1])
       body = credentials(institution_id, login_credentials)
